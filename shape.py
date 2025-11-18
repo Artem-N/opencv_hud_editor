@@ -5,7 +5,8 @@
 
 class Shape:
     def __init__(self, kind, color_bgr=(0, 255, 0), thickness=2, style='default', 
-                 line_style='solid', text='', font_scale=1.0, filled=False, **coords):
+                 line_style='solid', text='', font_scale=1.0, filled=False, 
+                 dash_length=10, dot_length=5, **coords):
         """
         Клас для представлення фігури
         
@@ -18,6 +19,8 @@ class Shape:
             text: текст для kind='text'
             font_scale: розмір шрифту для тексту
             filled: чи заповнена фігура (для кіл, прямокутників, полігонів)
+            dash_length: довжина пунктира для dashed ліній (в пікселях)
+            dot_length: відстань між точками для dotted ліній (в пікселях)
             **coords: координати фігури:
                 - line: x1,y1,x2,y2
                 - circle: cx,cy,r
@@ -37,5 +40,7 @@ class Shape:
         self.text = text
         self.font_scale = font_scale
         self.filled = filled
+        self.dash_length = dash_length
+        self.dot_length = dot_length
         self.coords = coords
 

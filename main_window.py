@@ -7,6 +7,7 @@ from PyQt5 import QtWidgets, QtGui, QtCore
 
 from canvas_widget import CanvasWidget
 from constants import COLOR_PRESETS, STYLE_PRESETS
+from ui_group_panel import GroupPanel
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -21,62 +22,200 @@ class MainWindow(QtWidgets.QMainWindow):
         self.canvas = CanvasWidget()
         self.setCentralWidget(self.canvas)
 
+        # Створюємо панель груп
+        self.group_panel = GroupPanel(self.canvas, self)
+        self.addDockWidget(QtCore.Qt.RightDockWidgetArea, self.group_panel)
+        self.group_panel.group_changed.connect(self.on_group_changed)
+
         self._build_ui()
+        
+        # Перевіряємо чи є автозбереження
+        self._check_autosave()
+    
+    def _create_menu(self):
+        """Створити меню"""
+        menubar = self.menuBar()
+        
+        # Меню File
+        file_menu = menubar.addMenu("&File")
+        
+        save_action = QtWidgets.QAction("&Save Project", self)
+        save_action.setShortcut("Ctrl+S")
+        save_action.setStatusTip("Save project to JSON file")
+        save_action.triggered.connect(self.save_project)
+        file_menu.addAction(save_action)
+        
+        load_action = QtWidgets.QAction("&Open Project", self)
+        load_action.setShortcut("Ctrl+O")
+        load_action.setStatusTip("Load project from JSON file")
+        load_action.triggered.connect(self.load_project)
+        file_menu.addAction(load_action)
+        
+        file_menu.addSeparator()
+        
+        export_action = QtWidgets.QAction("&Export Code...", self)
+        export_action.setShortcut("Ctrl+E")
+        export_action.setStatusTip("Export to OpenCV Python code")
+        export_action.triggered.connect(self.export_code)
+        file_menu.addAction(export_action)
+        
+        file_menu.addSeparator()
+        
+        exit_action = QtWidgets.QAction("E&xit", self)
+        exit_action.setShortcut("Ctrl+Q")
+        exit_action.setStatusTip("Exit application")
+        exit_action.triggered.connect(self.close)
+        file_menu.addAction(exit_action)
+        
+        # Меню Edit
+        edit_menu = menubar.addMenu("&Edit")
+        
+        undo_action = QtWidgets.QAction("&Undo", self)
+        undo_action.setShortcut("Z")
+        undo_action.setStatusTip("Undo last action")
+        undo_action.triggered.connect(self.canvas.undo)
+        edit_menu.addAction(undo_action)
+        
+        edit_menu.addSeparator()
+        
+        copy_action = QtWidgets.QAction("&Copy", self)
+        copy_action.setShortcut("Ctrl+C")
+        copy_action.setStatusTip("Copy selected shapes")
+        copy_action.triggered.connect(self.canvas.copy_selected)
+        edit_menu.addAction(copy_action)
+        
+        paste_action = QtWidgets.QAction("&Paste", self)
+        paste_action.setShortcut("Ctrl+V")
+        paste_action.setStatusTip("Paste shapes from clipboard")
+        paste_action.triggered.connect(self.canvas.paste)
+        edit_menu.addAction(paste_action)
+        
+        delete_action = QtWidgets.QAction("&Delete", self)
+        delete_action.setShortcut("Delete")
+        delete_action.setStatusTip("Delete selected shapes")
+        delete_action.triggered.connect(self.delete_selected)
+        edit_menu.addAction(delete_action)
+        
+        edit_menu.addSeparator()
+        
+        flip_h_action = QtWidgets.QAction("Flip &Horizontal", self)
+        flip_h_action.setStatusTip("Create mirrored copies horizontally")
+        flip_h_action.triggered.connect(self.canvas.flip_horizontal)
+        edit_menu.addAction(flip_h_action)
+        
+        flip_v_action = QtWidgets.QAction("Flip &Vertical", self)
+        flip_v_action.setStatusTip("Create mirrored copies vertically")
+        flip_v_action.triggered.connect(self.canvas.flip_vertical)
+        edit_menu.addAction(flip_v_action)
+        
+        edit_menu.addSeparator()
+        
+        clear_action = QtWidgets.QAction("C&lear All", self)
+        clear_action.setStatusTip("Clear all shapes")
+        clear_action.triggered.connect(self.canvas.clear_all)
+        edit_menu.addAction(clear_action)
+        
+        edit_menu.addSeparator()
+        
+        # Автозбереження
+        autosave_action = QtWidgets.QAction("&AutoSave Settings...", self)
+        autosave_action.setStatusTip("Configure autosave")
+        autosave_action.triggered.connect(self.show_autosave_settings)
+        edit_menu.addAction(autosave_action)
+        
+        # Меню View
+        view_menu = menubar.addMenu("&View")
+        
+        reset_zoom_action = QtWidgets.QAction("&Reset Zoom", self)
+        reset_zoom_action.setShortcut("0")
+        reset_zoom_action.setStatusTip("Reset zoom and pan to default")
+        reset_zoom_action.triggered.connect(self.canvas.reset_zoom)
+        view_menu.addAction(reset_zoom_action)
+        
+        view_menu.addSeparator()
+        
+        self.snap_action = QtWidgets.QAction("&Snap to Grid", self)
+        self.snap_action.setShortcut("G")
+        self.snap_action.setCheckable(True)
+        self.snap_action.setChecked(False)
+        self.snap_action.setStatusTip("Snap points to grid")
+        self.snap_action.toggled.connect(self.on_snap_toggled)
+        view_menu.addAction(self.snap_action)
+        
+        view_menu.addSeparator()
+        
+        show_groups_action = QtWidgets.QAction("Show &Groups Panel", self)
+        show_groups_action.setCheckable(True)
+        show_groups_action.setChecked(True)
+        show_groups_action.toggled.connect(self.toggle_groups_panel)
+        view_menu.addAction(show_groups_action)
 
     def _build_ui(self):
-        toolbar = QtWidgets.QToolBar()
-        toolbar.setFocusPolicy(QtCore.Qt.NoFocus)  # Toolbar не має перехоплювати фокус
+        # Створюємо меню
+        self._create_menu()
+        
+        # Створюємо тулбар для основних інструментів
+        toolbar = QtWidgets.QToolBar("Tools")
+        toolbar.setFocusPolicy(QtCore.Qt.NoFocus)
         self.addToolBar(toolbar)
 
+        # Інструменти навігації та виділення
         btn_pan = QtWidgets.QAction("Pan (P)", self)
         btn_pan.setToolTip("Pan mode - move canvas with left mouse button")
         btn_pan.triggered.connect(self.canvas.set_mode_pan)
         toolbar.addAction(btn_pan)
 
         btn_select = QtWidgets.QAction("Select (S)", self)
+        btn_select.setToolTip("Select and move shapes")
         btn_select.triggered.connect(self.canvas.set_mode_select)
         toolbar.addAction(btn_select)
 
+        toolbar.addSeparator()
+
+        # Інструменти малювання
         btn_line = QtWidgets.QAction("Line (L)", self)
+        btn_line.setToolTip("Draw line")
         btn_line.triggered.connect(self.canvas.set_mode_line)
         toolbar.addAction(btn_line)
 
-        btn_circle = QtWidgets.QAction("Circle (C)", self)
-        btn_circle.triggered.connect(self.canvas.set_mode_circle)
-        toolbar.addAction(btn_circle)
-
-        btn_text = QtWidgets.QAction("Text (T)", self)
-        btn_text.triggered.connect(self.canvas.set_mode_text)
-        toolbar.addAction(btn_text)
-        
-        btn_point = QtWidgets.QAction("Point", self)
-        btn_point.setToolTip("Point - single click")
-        btn_point.triggered.connect(self.canvas.set_mode_point)
-        toolbar.addAction(btn_point)
-        
-        btn_rectangle = QtWidgets.QAction("Rectangle (R)", self)
-        btn_rectangle.setToolTip("Rectangle - drag to draw")
-        btn_rectangle.triggered.connect(self.canvas.set_mode_rectangle)
-        toolbar.addAction(btn_rectangle)
-        
         btn_arrow = QtWidgets.QAction("Arrow (A)", self)
-        btn_arrow.setToolTip("Arrow - drag to draw")
+        btn_arrow.setToolTip("Draw arrow")
         btn_arrow.triggered.connect(self.canvas.set_mode_arrow)
         toolbar.addAction(btn_arrow)
         
+        btn_rectangle = QtWidgets.QAction("Rectangle (R)", self)
+        btn_rectangle.setToolTip("Draw rectangle")
+        btn_rectangle.triggered.connect(self.canvas.set_mode_rectangle)
+        toolbar.addAction(btn_rectangle)
+
+        btn_circle = QtWidgets.QAction("Circle (C)", self)
+        btn_circle.setToolTip("Draw circle")
+        btn_circle.triggered.connect(self.canvas.set_mode_circle)
+        toolbar.addAction(btn_circle)
+        
+        btn_ellipse = QtWidgets.QAction("Ellipse (E)", self)
+        btn_ellipse.setToolTip("Draw ellipse")
+        btn_ellipse.triggered.connect(self.canvas.set_mode_ellipse)
+        toolbar.addAction(btn_ellipse)
+        
         btn_polygon = QtWidgets.QAction("Polygon", self)
-        btn_polygon.setToolTip("Polygon - click to add points, right-click to finish")
+        btn_polygon.setToolTip("Draw polygon - click points, right-click to finish")
         btn_polygon.triggered.connect(self.canvas.set_mode_polygon)
         toolbar.addAction(btn_polygon)
         
-        btn_ellipse = QtWidgets.QAction("Ellipse (E)", self)
-        btn_ellipse.setToolTip("Ellipse - drag to draw")
-        btn_ellipse.triggered.connect(self.canvas.set_mode_ellipse)
-        toolbar.addAction(btn_ellipse)
+        btn_point = QtWidgets.QAction("Point", self)
+        btn_point.setToolTip("Place point")
+        btn_point.triggered.connect(self.canvas.set_mode_point)
+        toolbar.addAction(btn_point)
+
+        btn_text = QtWidgets.QAction("Text (T)", self)
+        btn_text.setToolTip("Add text")
+        btn_text.triggered.connect(self.canvas.set_mode_text)
+        toolbar.addAction(btn_text)
 
         toolbar.addSeparator()
 
-        # Вибір кольору
+        # Налаштування малювання
         toolbar.addWidget(QtWidgets.QLabel("Color:"))
         self.color_combo = QtWidgets.QComboBox()
         self.color_combo.addItems(list(COLOR_PRESETS.keys()))
@@ -126,6 +265,26 @@ class MainWindow(QtWidgets.QMainWindow):
         self.line_style_combo.currentTextChanged.connect(self.on_line_style_changed)
         toolbar.addWidget(self.line_style_combo)
         
+        # Довжина пунктира
+        toolbar.addWidget(QtWidgets.QLabel("Dash:"))
+        self.dash_length_spin = QtWidgets.QSpinBox()
+        self.dash_length_spin.setMinimum(2)
+        self.dash_length_spin.setMaximum(50)
+        self.dash_length_spin.setValue(10)
+        self.dash_length_spin.setToolTip("Dash length for dashed lines (in pixels)")
+        self.dash_length_spin.valueChanged.connect(self.on_dash_length_changed)
+        toolbar.addWidget(self.dash_length_spin)
+        
+        # Відстань між точками
+        toolbar.addWidget(QtWidgets.QLabel("Dot:"))
+        self.dot_length_spin = QtWidgets.QSpinBox()
+        self.dot_length_spin.setMinimum(2)
+        self.dot_length_spin.setMaximum(30)
+        self.dot_length_spin.setValue(5)
+        self.dot_length_spin.setToolTip("Dot spacing for dotted lines (in pixels)")
+        self.dot_length_spin.valueChanged.connect(self.on_dot_length_changed)
+        toolbar.addWidget(self.dot_length_spin)
+        
         # Заповнення
         self.filled_checkbox = QtWidgets.QCheckBox("Filled")
         self.filled_checkbox.setToolTip("Fill shapes (circles, rectangles, polygons)")
@@ -144,72 +303,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.font_scale_spin.valueChanged.connect(self.on_font_scale_changed)
         toolbar.addWidget(self.font_scale_spin)
 
-        toolbar.addSeparator()
-
-        # Снап до сітки
-        self.snap_checkbox = QtWidgets.QCheckBox("Snap to Grid")
-        self.snap_checkbox.setToolTip("Snap points to grid (G)")
-        self.snap_checkbox.toggled.connect(self.on_snap_toggled)
-        toolbar.addWidget(self.snap_checkbox)
-
-        toolbar.addSeparator()
-
-        btn_copy = QtWidgets.QAction("Copy (Ctrl+C)", self)
-        btn_copy.setToolTip("Copy selected shapes")
-        btn_copy.triggered.connect(self.canvas.copy_selected)
-        toolbar.addAction(btn_copy)
-
-        btn_paste = QtWidgets.QAction("Paste (Ctrl+V)", self)
-        btn_paste.setToolTip("Paste shapes from clipboard")
-        btn_paste.triggered.connect(self.canvas.paste)
-        toolbar.addAction(btn_paste)
-
-        toolbar.addSeparator()
-
-        btn_flip_h = QtWidgets.QAction("Flip H", self)
-        btn_flip_h.setToolTip("Create mirrored copies horizontally")
-        btn_flip_h.triggered.connect(self.canvas.flip_horizontal)
-        toolbar.addAction(btn_flip_h)
-
-        btn_flip_v = QtWidgets.QAction("Flip V", self)
-        btn_flip_v.setToolTip("Create mirrored copies vertically")
-        btn_flip_v.triggered.connect(self.canvas.flip_vertical)
-        toolbar.addAction(btn_flip_v)
-
-        toolbar.addSeparator()
-
-        btn_undo = QtWidgets.QAction("Undo (Z)", self)
-        btn_undo.triggered.connect(self.canvas.undo)
-        toolbar.addAction(btn_undo)
-
-        btn_clear = QtWidgets.QAction("Clear", self)
-        btn_clear.triggered.connect(self.canvas.clear_all)
-        toolbar.addAction(btn_clear)
-
-        toolbar.addSeparator()
-
-        btn_reset_zoom = QtWidgets.QAction("Reset Zoom (R)", self)
-        btn_reset_zoom.setToolTip("Reset zoom and pan to default")
-        btn_reset_zoom.triggered.connect(self.canvas.reset_zoom)
-        toolbar.addAction(btn_reset_zoom)
-
-        toolbar.addSeparator()
-        
-        btn_save_project = QtWidgets.QAction("Save Project", self)
-        btn_save_project.setToolTip("Save project to JSON file (Ctrl+S)")
-        btn_save_project.triggered.connect(self.save_project)
-        toolbar.addAction(btn_save_project)
-        
-        btn_load_project = QtWidgets.QAction("Load Project", self)
-        btn_load_project.setToolTip("Load project from JSON file (Ctrl+O)")
-        btn_load_project.triggered.connect(self.load_project)
-        toolbar.addAction(btn_load_project)
-
-        toolbar.addSeparator()
-
-        btn_export = QtWidgets.QAction("Export code (Ctrl+E)", self)
-        btn_export.triggered.connect(self.export_code)
-        toolbar.addAction(btn_export)
 
         # статусна строка
         self.status = QtWidgets.QLabel("Mode: pan | Left click & drag to move canvas | Right click to return to Pan | Wheel – zoom")
@@ -249,6 +342,137 @@ class MainWindow(QtWidgets.QMainWindow):
     
     def on_snap_toggled(self, checked: bool):
         self.canvas.set_snap_to_grid(checked)
+    
+    def toggle_groups_panel(self, checked: bool):
+        """Показати/сховати панель груп"""
+        if checked:
+            self.group_panel.show()
+        else:
+            self.group_panel.hide()
+    
+    def on_group_changed(self):
+        """Обробити зміни в групах"""
+        # Можна додати додаткову логіку якщо потрібно
+        pass
+    
+    def _check_autosave(self):
+        """Перевірити наявність автозбереження"""
+        autosave = self.canvas.autosave_manager
+        
+        if autosave.has_autosave():
+            info = autosave.get_autosave_info()
+            
+            if info:
+                msg = QtWidgets.QMessageBox(self)
+                msg.setIcon(QtWidgets.QMessageBox.Question)
+                msg.setWindowTitle("Restore Session")
+                msg.setText("Found autosaved session!")
+                msg.setInformativeText(
+                    f"Last saved: {info['modified'].strftime('%Y-%m-%d %H:%M:%S')}\n"
+                    f"Shapes: {info['shapes']}\n"
+                    f"Groups: {info['groups']}\n\n"
+                    f"Do you want to restore it?"
+                )
+                msg.setStandardButtons(QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
+                msg.setDefaultButton(QtWidgets.QMessageBox.Yes)
+                
+                reply = msg.exec_()
+                
+                if reply == QtWidgets.QMessageBox.Yes:
+                    if autosave.load_autosave():
+                        # Оновлюємо панель груп
+                        if hasattr(self, 'group_panel'):
+                            self.group_panel.refresh_groups()
+                        
+                        self.statusBar().showMessage("Session restored!", 3000)
+                else:
+                    # Якщо не відновлюємо, видаляємо автозбереження
+                    autosave.clear_autosave()
+    
+    def show_autosave_settings(self):
+        """Показати налаштування автозбереження"""
+        autosave = self.canvas.autosave_manager
+        
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle("AutoSave Settings")
+        layout = QtWidgets.QVBoxLayout(dialog)
+        
+        # Чекбокс для увімкнення/вимкнення
+        enabled_checkbox = QtWidgets.QCheckBox("Enable AutoSave")
+        enabled_checkbox.setChecked(autosave.autosave_enabled)
+        layout.addWidget(enabled_checkbox)
+        
+        # Інтервал
+        interval_layout = QtWidgets.QHBoxLayout()
+        interval_layout.addWidget(QtWidgets.QLabel("Interval (seconds):"))
+        interval_spin = QtWidgets.QSpinBox()
+        interval_spin.setRange(10, 600)
+        interval_spin.setValue(autosave.autosave_interval // 1000)
+        interval_layout.addWidget(interval_spin)
+        layout.addLayout(interval_layout)
+        
+        # Інфо про поточне автозбереження
+        info_label = QtWidgets.QLabel()
+        if autosave.has_autosave():
+            info = autosave.get_autosave_info()
+            if info:
+                info_label.setText(
+                    f"Current autosave:\n"
+                    f"Location: {info['file']}\n"
+                    f"Last saved: {info['modified'].strftime('%Y-%m-%d %H:%M:%S')}\n"
+                    f"Shapes: {info['shapes']}, Groups: {info['groups']}"
+                )
+        else:
+            info_label.setText("No autosave file found")
+        info_label.setWordWrap(True)
+        layout.addWidget(info_label)
+        
+        # Кнопки
+        button_layout = QtWidgets.QHBoxLayout()
+        
+        btn_clear = QtWidgets.QPushButton("Clear AutoSave")
+        btn_clear.clicked.connect(lambda: self._clear_autosave_and_update(autosave, info_label))
+        button_layout.addWidget(btn_clear)
+        
+        btn_save = QtWidgets.QPushButton("Save Now")
+        btn_save.clicked.connect(lambda: self._save_now_and_update(autosave, info_label))
+        button_layout.addWidget(btn_save)
+        
+        layout.addLayout(button_layout)
+        
+        # OK/Cancel
+        ok_cancel_layout = QtWidgets.QHBoxLayout()
+        btn_ok = QtWidgets.QPushButton("OK")
+        btn_ok.clicked.connect(dialog.accept)
+        btn_cancel = QtWidgets.QPushButton("Cancel")
+        btn_cancel.clicked.connect(dialog.reject)
+        ok_cancel_layout.addWidget(btn_ok)
+        ok_cancel_layout.addWidget(btn_cancel)
+        layout.addLayout(ok_cancel_layout)
+        
+        if dialog.exec_() == QtWidgets.QDialog.Accepted:
+            autosave.set_enabled(enabled_checkbox.isChecked())
+            autosave.set_interval(interval_spin.value())
+            self.statusBar().showMessage("AutoSave settings updated", 2000)
+    
+    def _clear_autosave_and_update(self, autosave, label):
+        """Очистити автозбереження та оновити label"""
+        autosave.clear_autosave()
+        label.setText("No autosave file found")
+    
+    def _save_now_and_update(self, autosave, label):
+        """Зберегти зараз та оновити label"""
+        autosave.autosave()
+        if autosave.has_autosave():
+            info = autosave.get_autosave_info()
+            if info:
+                label.setText(
+                    f"Current autosave:\n"
+                    f"Location: {info['file']}\n"
+                    f"Last saved: {info['modified'].strftime('%Y-%m-%d %H:%M:%S')}\n"
+                    f"Shapes: {info['shapes']}, Groups: {info['groups']}"
+                )
+        self.statusBar().showMessage("Saved!", 2000)
     
     def on_mouse_moved(self, x: int, y: int):
         self.coords_label.setText(f"Cursor: ({x}, {y})")
@@ -308,6 +532,18 @@ class MainWindow(QtWidgets.QMainWindow):
         # Якщо є вибрані фігури - змінюємо їх стиль лінії
         self._apply_to_selected_shapes('line_style', line_style)
     
+    def on_dash_length_changed(self, value: int):
+        """Обробник зміни довжини пунктира"""
+        self.canvas.set_dash_length(value)
+        # Якщо є вибрані фігури - змінюємо їх довжину пунктира
+        self._apply_to_selected_shapes('dash_length', value)
+    
+    def on_dot_length_changed(self, value: int):
+        """Обробник зміни відстані між точками"""
+        self.canvas.set_dot_length(value)
+        # Якщо є вибрані фігури - змінюємо їх відстань між точками
+        self._apply_to_selected_shapes('dot_length', value)
+    
     def on_filled_toggled(self, checked: bool):
         """Обробник зміни заповнення фігур"""
         self.canvas.set_filled(checked)
@@ -340,6 +576,12 @@ class MainWindow(QtWidgets.QMainWindow):
                         changed = True
                 elif property_name == 'line_style':
                     shape.line_style = value
+                    changed = True
+                elif property_name == 'dash_length':
+                    shape.dash_length = value
+                    changed = True
+                elif property_name == 'dot_length':
+                    shape.dot_length = value
                     changed = True
                 elif property_name == 'filled':
                     # Тільки для фігур, які можуть бути заповненими
