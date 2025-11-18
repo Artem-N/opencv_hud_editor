@@ -68,6 +68,46 @@ def is_point_near_line_middle(px, py, x1, y1, x2, y2, tolerance):
     return False, None
 
 
+def is_point_near_line_endpoint(px, py, x1, y1, x2, y2, tolerance):
+    """Перевірити чи точка близько до початку чи кінця лінії
+    
+    Returns:
+        (is_near, endpoint): (True/'start'/'end', None) або (False, None)
+    """
+    # Перевіряємо відстань до початку лінії
+    dist_to_start = math.hypot(px - x1, py - y1)
+    if dist_to_start < tolerance:
+        return 'start', (x1, y1)
+    
+    # Перевіряємо відстань до кінця лінії
+    dist_to_end = math.hypot(px - x2, py - y2)
+    if dist_to_end < tolerance:
+        return 'end', (x2, y2)
+    
+    return None, None
+
+
+def point_near_cubic_curve(px, py, x1, y1, x2, y2, cx1, cy1, cx2, cy2, tolerance):
+    """Перевірити чи точка близько до кубічної кривої Безьє"""
+    min_dist = float('inf')
+    steps = 30
+    for i in range(steps + 1):
+        t = i / steps
+        # Кубічна крива Безьє: B(t) = (1-t)³P0 + 3(1-t)²tP1 + 3(1-t)t²P2 + t³P3
+        t_inv = 1 - t
+        bx = (t_inv ** 3 * x1 + 
+              3 * t_inv ** 2 * t * cx1 + 
+              3 * t_inv * t ** 2 * cx2 + 
+              t ** 3 * x2)
+        by = (t_inv ** 3 * y1 + 
+              3 * t_inv ** 2 * t * cy1 + 
+              3 * t_inv * t ** 2 * cy2 + 
+              t ** 3 * y2)
+        dist = math.hypot(px - bx, py - by)
+        min_dist = min(min_dist, dist)
+    return min_dist < tolerance
+
+
 def constrain_line(x, y, x0, y0):
     """Обмежити лінію до горизонталі або вертикалі (при Shift)"""
     dx = abs(x - x0)

@@ -2,7 +2,7 @@
 Менеджер для вибору та переміщення фігур
 """
 import math
-from utils.geometry import point_near_line, point_near_curve
+from utils.geometry import point_near_line, point_near_curve, point_near_cubic_curve
 
 
 class SelectionManager:
@@ -20,6 +20,9 @@ class SelectionManager:
         self.editing_curve = False
         self.curve_shape_idx = None
         self.dragging_control_point = False
+        self.editing_cubic_curve = False  # Для кубічних кривих
+        self.cubic_curve_endpoint = None  # 'start' або 'end' - який кінець редагуємо
+        self.dragging_which_control = None  # 'cx' або 'cx1'/'cx2' для кубічних
         self.show_control_points = True
     
     def clear_selection(self):
@@ -118,9 +121,74 @@ class SelectionManager:
         self.curve_shape_idx = idx
         self.drag_start = (world_x, world_y)
     
-    def start_control_point_dragging(self, idx):
-        """Почати перетягування контрольної точки кривої"""
+    def start_cubic_curve_editing(self, idx, world_x, world_y, endpoint, shapes):
+        """Почати редагування кубічної кривої (перетворення лінії в криву з 2 контрольними точками)
+        
+        Args:
+            idx: індекс фігури
+            world_x, world_y: координати кліку
+            endpoint: 'start' або 'end' - який кінець лінії тягнемо
+            shapes: список фігур
+        """
+        if idx >= len(shapes):
+            return
+        
+        shape = shapes[idx]
+        if shape.kind not in ['line', 'arrow']:
+            return
+        
+        c = shape.coords
+        
+        # Зберігаємо старий kind (для стрілок)
+        old_kind = shape.kind
+        
+        # Одразу перетворюємо лінію в кубічну криву
+        # Початкові контрольні точки розміщуємо на 1/3 та 2/3 лінії
+        cx1_initial = c['x1'] + (c['x2'] - c['x1']) / 3
+        cy1_initial = c['y1'] + (c['y2'] - c['y1']) / 3
+        cx2_initial = c['x1'] + 2 * (c['x2'] - c['x1']) / 3
+        cy2_initial = c['y1'] + 2 * (c['y2'] - c['y1']) / 3
+        
+        # Зберігаємо всі атрибути стилю
+        line_style = getattr(shape, 'line_style', 'solid')
+        dash_length = getattr(shape, 'dash_length', 10)
+        dot_length = getattr(shape, 'dot_length', 5)
+        
+        shape.kind = 'curve'
+        shape.coords = {
+            'x1': c['x1'],
+            'y1': c['y1'],
+            'x2': c['x2'],
+            'y2': c['y2'],
+            'cx1': cx1_initial,
+            'cy1': cy1_initial,
+            'cx2': cx2_initial,
+            'cy2': cy2_initial
+        }
+        
+        # Копіюємо стилі лінії
+        shape.line_style = line_style
+        shape.dash_length = dash_length
+        shape.dot_length = dot_length
+        
+        # Встановлюємо режим перетягування відповідної контрольної точки
         self.dragging_control_point = True
+        self.curve_shape_idx = idx
+        self.cubic_curve_endpoint = endpoint
+        # Визначаємо яку контрольну точку будемо тягнути
+        self.dragging_which_control = 'cx1' if endpoint == 'start' else 'cx2'
+        self.selected_shapes = {idx}
+        self.drag_start = (world_x, world_y)
+    
+    def start_control_point_dragging(self, idx, which_control='cx'):
+        """Почати перетягування контрольної точки кривої
+        
+        Args:
+            idx: індекс фігури
+            which_control: 'cx' для квадратичної, 'cx1' або 'cx2' для кубічної
+        """
+        self.dragging_control_point = True
+        self.dragging_which_control = which_control
         self.curve_shape_idx = idx
         self.selected_shapes = {idx}
     
@@ -131,9 +199,15 @@ class SelectionManager:
         
         shape = shapes[self.curve_shape_idx]
         
+        # Перетворення лінії в квадратичну криву (клік по середині)
         if self.editing_curve and shape.kind in ['line', 'arrow']:
-            # Перетворюємо лінію в криву
             c = shape.coords
+            
+            # Зберігаємо всі атрибути стилю
+            line_style = getattr(shape, 'line_style', 'solid')
+            dash_length = getattr(shape, 'dash_length', 10)
+            dot_length = getattr(shape, 'dot_length', 5)
+            
             shape.kind = 'curve'
             shape.coords = {
                 'x1': c['x1'],
@@ -143,15 +217,36 @@ class SelectionManager:
                 'cx': world_x,
                 'cy': world_y
             }
+            
+            # Копіюємо стилі лінії
+            shape.line_style = line_style
+            shape.dash_length = dash_length
+            shape.dot_length = dot_length
+            
             self.editing_curve = False
             self.dragging_control_point = True
+            self.dragging_which_control = 'cx'
             self.selected_shapes = {self.curve_shape_idx}
             return True
         
+        # Кубічна крива вже була створена в start_cubic_curve_editing, тут не потрібно робити перетворення
+        
+        # Оновлення контрольної точки існуючої кривої
         if self.dragging_control_point and shape.kind == 'curve':
-            # Оновлюємо контрольну точку
-            shape.coords['cx'] = world_x
-            shape.coords['cy'] = world_y
+            c = shape.coords
+            # Перевіряємо чи це кубічна крива (має cx1, cy1, cx2, cy2)
+            if 'cx1' in c and 'cy1' in c and 'cx2' in c and 'cy2' in c:
+                # Кубічна крива - оновлюємо відповідну контрольну точку
+                if self.dragging_which_control == 'cx1':
+                    shape.coords['cx1'] = world_x
+                    shape.coords['cy1'] = world_y
+                elif self.dragging_which_control == 'cx2':
+                    shape.coords['cx2'] = world_x
+                    shape.coords['cy2'] = world_y
+            else:
+                # Квадратична крива - оновлюємо єдину контрольну точку
+                shape.coords['cx'] = world_x
+                shape.coords['cy'] = world_y
             return True
         
         return False
@@ -159,11 +254,18 @@ class SelectionManager:
     def stop_curve_editing(self):
         """Закінчити редагування кривої"""
         self.editing_curve = False
+        self.editing_cubic_curve = False
         self.dragging_control_point = False
         self.curve_shape_idx = None
+        self.cubic_curve_endpoint = None
+        self.dragging_which_control = None
     
     def is_near_control_point(self, shapes, shape_idx, x, y, zoom_factor):
-        """Перевірити чи курсор близько до контрольної точки кривої"""
+        """Перевірити чи курсор близько до контрольної точки кривої
+        
+        Повертає True якщо близько до будь-якої контрольної точки.
+        Оновлює self.dragging_which_control для визначення якої саме.
+        """
         if shape_idx >= len(shapes):
             return False
         
@@ -172,8 +274,29 @@ class SelectionManager:
             return False
         
         c = shape.coords
-        ctrl_dist = math.hypot(x - c['cx'], y - c['cy'])
-        return ctrl_dist < 10 / zoom_factor
+        tolerance = 10 / zoom_factor
+        
+        # Перевіряємо кубічну криву (з двома контрольними точками)
+        if 'cx1' in c and 'cy1' in c and 'cx2' in c and 'cy2' in c:
+            dist1 = math.hypot(x - c['cx1'], y - c['cy1'])
+            dist2 = math.hypot(x - c['cx2'], y - c['cy2'])
+            
+            if dist1 < tolerance:
+                self.dragging_which_control = 'cx1'
+                return True
+            if dist2 < tolerance:
+                self.dragging_which_control = 'cx2'
+                return True
+            return False
+        
+        # Квадратична крива (з однією контрольною точкою)
+        if 'cx' in c and 'cy' in c:
+            ctrl_dist = math.hypot(x - c['cx'], y - c['cy'])
+            if ctrl_dist < tolerance:
+                self.dragging_which_control = 'cx'
+                return True
+        
+        return False
     
     def _is_point_on_shape(self, shape, x, y, tolerance):
         """Перевірити чи точка на фігурі"""
@@ -182,7 +305,13 @@ class SelectionManager:
             return point_near_line(x, y, c['x1'], c['y1'], c['x2'], c['y2'], tolerance)
         elif shape.kind == 'curve':
             c = shape.coords
-            return point_near_curve(x, y, c['x1'], c['y1'], c['x2'], c['y2'], c['cx'], c['cy'], tolerance)
+            # Перевіряємо чи це кубічна крива
+            if 'cx1' in c and 'cy1' in c and 'cx2' in c and 'cy2' in c:
+                return point_near_cubic_curve(x, y, c['x1'], c['y1'], c['x2'], c['y2'], 
+                                             c['cx1'], c['cy1'], c['cx2'], c['cy2'], tolerance)
+            else:
+                # Квадратична крива
+                return point_near_curve(x, y, c['x1'], c['y1'], c['x2'], c['y2'], c['cx'], c['cy'], tolerance)
         elif shape.kind == 'circle':
             c = shape.coords
             dist = math.hypot(x - c['cx'], y - c['cy'])
@@ -260,8 +389,16 @@ class SelectionManager:
             shape.coords['y1'] = orig_coords['y1'] + dy
             shape.coords['x2'] = orig_coords['x2'] + dx
             shape.coords['y2'] = orig_coords['y2'] + dy
-            shape.coords['cx'] = orig_coords['cx'] + dx
-            shape.coords['cy'] = orig_coords['cy'] + dy
+            # Підтримка квадратичних та кубічних кривих
+            if 'cx' in orig_coords and 'cy' in orig_coords:
+                shape.coords['cx'] = orig_coords['cx'] + dx
+                shape.coords['cy'] = orig_coords['cy'] + dy
+            if 'cx1' in orig_coords and 'cy1' in orig_coords:
+                shape.coords['cx1'] = orig_coords['cx1'] + dx
+                shape.coords['cy1'] = orig_coords['cy1'] + dy
+            if 'cx2' in orig_coords and 'cy2' in orig_coords:
+                shape.coords['cx2'] = orig_coords['cx2'] + dx
+                shape.coords['cy2'] = orig_coords['cy2'] + dy
         elif shape.kind in ['circle', 'ellipse']:
             shape.coords['cx'] = orig_coords['cx'] + dx
             shape.coords['cy'] = orig_coords['cy'] + dy

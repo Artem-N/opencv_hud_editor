@@ -59,6 +59,12 @@ class MainWindow(QtWidgets.QMainWindow):
         export_action.triggered.connect(self.export_code)
         file_menu.addAction(export_action)
         
+        preview_action = QtWidgets.QAction("&Test on Camera...", self)
+        preview_action.setShortcut("Ctrl+T")
+        preview_action.setStatusTip("Test HUD overlay on camera video")
+        preview_action.triggered.connect(self.show_camera_preview)
+        file_menu.addAction(preview_action)
+        
         file_menu.addSeparator()
         
         exit_action = QtWidgets.QAction("E&xit", self)
@@ -99,14 +105,28 @@ class MainWindow(QtWidgets.QMainWindow):
         edit_menu.addSeparator()
         
         flip_h_action = QtWidgets.QAction("Flip &Horizontal", self)
-        flip_h_action.setStatusTip("Create mirrored copies horizontally")
+        flip_h_action.setStatusTip("Create mirrored copies horizontally (with gap)")
         flip_h_action.triggered.connect(self.canvas.flip_horizontal)
         edit_menu.addAction(flip_h_action)
         
         flip_v_action = QtWidgets.QAction("Flip &Vertical", self)
-        flip_v_action.setStatusTip("Create mirrored copies vertically")
+        flip_v_action.setStatusTip("Create mirrored copies vertically (with gap)")
         flip_v_action.triggered.connect(self.canvas.flip_vertical)
         edit_menu.addAction(flip_v_action)
+        
+        edit_menu.addSeparator()
+        
+        mirror_h_action = QtWidgets.QAction("Mirror Across &Vertical Axis", self)
+        mirror_h_action.setShortcut("Shift+H")
+        mirror_h_action.setStatusTip("Mirror shapes across vertical axis (canvas center)")
+        mirror_h_action.triggered.connect(self.canvas.mirror_across_center_horizontal)
+        edit_menu.addAction(mirror_h_action)
+        
+        mirror_v_action = QtWidgets.QAction("Mirror Across Hori&zontal Axis", self)
+        mirror_v_action.setShortcut("Shift+V")
+        mirror_v_action.setStatusTip("Mirror shapes across horizontal axis (canvas center)")
+        mirror_v_action.triggered.connect(self.canvas.mirror_across_center_vertical)
+        edit_menu.addAction(mirror_v_action)
         
         edit_menu.addSeparator()
         
@@ -141,6 +161,18 @@ class MainWindow(QtWidgets.QMainWindow):
         self.snap_action.setStatusTip("Snap points to grid")
         self.snap_action.toggled.connect(self.on_snap_toggled)
         view_menu.addAction(self.snap_action)
+        
+        grid_size_action = QtWidgets.QAction("Grid &Size...", self)
+        grid_size_action.setStatusTip("Change grid size")
+        grid_size_action.triggered.connect(self.show_grid_size_dialog)
+        view_menu.addAction(grid_size_action)
+        
+        view_menu.addSeparator()
+        
+        canvas_limits_action = QtWidgets.QAction("Canvas &Limits...", self)
+        canvas_limits_action.setStatusTip("Set canvas size limits")
+        canvas_limits_action.triggered.connect(self.show_canvas_limits_dialog)
+        view_menu.addAction(canvas_limits_action)
         
         view_menu.addSeparator()
         
@@ -665,6 +697,9 @@ class MainWindow(QtWidgets.QMainWindow):
             # Ctrl+O для завантаження проекту
             elif key == QtCore.Qt.Key_O or text in ['O', 'Щ']:
                 self.load_project()
+            # Ctrl+T для тестування на камері
+            elif key == QtCore.Qt.Key_T or text in ['T', 'Е']:
+                self.show_camera_preview()
             else:
                 super().keyPressEvent(event)
     
@@ -686,6 +721,9 @@ class MainWindow(QtWidgets.QMainWindow):
         canvas_width = canvas_rect.width()
         canvas_height = canvas_rect.height()
         
+        # Перевіряємо чи встановлені межі полотна
+        limits = self.canvas.get_canvas_limits()
+        
         dlg = QtWidgets.QDialog(self)
         dlg.setWindowTitle("Export OpenCV code")
         layout = QtWidgets.QVBoxLayout(dlg)
@@ -702,8 +740,20 @@ class MainWindow(QtWidgets.QMainWindow):
         self.origin_combo.setCurrentIndex(0)
         options_layout.addWidget(self.origin_combo)
         
-        info_label = QtWidgets.QLabel(f"Canvas size: {canvas_width} x {canvas_height} px")
-        info_label.setStyleSheet("color: gray;")
+        # Показуємо інформацію про розмір
+        if limits['enabled']:
+            info_label = QtWidgets.QLabel(
+                f"Canvas size limits: {limits['width']} x {limits['height']} px (enabled)\n"
+                f"Export will use these dimensions."
+            )
+            info_label.setStyleSheet("color: orange; font-weight: bold;")
+        else:
+            info_label = QtWidgets.QLabel(
+                f"Canvas size: {canvas_width} x {canvas_height} px\n"
+                f"No size limits set. You can set them in View → Canvas Limits."
+            )
+            info_label.setStyleSheet("color: gray;")
+        info_label.setWordWrap(True)
         options_layout.addWidget(info_label)
         
         options_group.setLayout(options_layout)
@@ -847,4 +897,175 @@ class MainWindow(QtWidgets.QMainWindow):
                     "Error",
                     f"Failed to load project:\n{str(e)}"
                 )
+    
+    def show_canvas_limits_dialog(self):
+        """Показати діалог налаштувань розміру полотна"""
+        limits = self.canvas.get_canvas_limits()
+        
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle("Canvas Size Limits")
+        layout = QtWidgets.QVBoxLayout(dialog)
+        
+        # Інформація
+        info_label = QtWidgets.QLabel(
+            "Встановіть обмеження розміру полотна для малювання.\n"
+            "Це корисно, коли ви малюєте HUD для відео певної роздільності."
+        )
+        info_label.setWordWrap(True)
+        layout.addWidget(info_label)
+        
+        layout.addSpacing(10)
+        
+        # Чекбокс для увімкнення/вимкнення
+        enabled_checkbox = QtWidgets.QCheckBox("Увімкнути обмеження розміру полотна")
+        enabled_checkbox.setChecked(limits['enabled'])
+        layout.addWidget(enabled_checkbox)
+        
+        layout.addSpacing(10)
+        
+        # Швидкий вибір роздільності
+        preset_group = QtWidgets.QGroupBox("Стандартні роздільності")
+        preset_layout = QtWidgets.QVBoxLayout()
+        
+        presets = [
+            ("1920 x 1080 (Full HD)", 1920, 1080),
+            ("1280 x 720 (HD)", 1280, 720),
+            ("1600 x 900", 1600, 900),
+            ("2560 x 1440 (2K)", 2560, 1440),
+            ("3840 x 2160 (4K)", 3840, 2160),
+        ]
+        
+        for label, w, h in presets:
+            btn = QtWidgets.QPushButton(label)
+            btn.clicked.connect(lambda checked, width=w, height=h: self._set_preset_size(width, height, width_spin, height_spin))
+            preset_layout.addWidget(btn)
+        
+        preset_group.setLayout(preset_layout)
+        layout.addWidget(preset_group)
+        
+        layout.addSpacing(10)
+        
+        # Власні розміри
+        custom_group = QtWidgets.QGroupBox("Власна роздільність")
+        custom_layout = QtWidgets.QFormLayout()
+        
+        width_spin = QtWidgets.QSpinBox()
+        width_spin.setRange(100, 10000)
+        width_spin.setValue(limits['width'])
+        custom_layout.addRow("Ширина:", width_spin)
+        
+        height_spin = QtWidgets.QSpinBox()
+        height_spin.setRange(100, 10000)
+        height_spin.setValue(limits['height'])
+        custom_layout.addRow("Висота:", height_spin)
+        
+        custom_group.setLayout(custom_layout)
+        layout.addWidget(custom_group)
+        
+        layout.addSpacing(10)
+        
+        # Кнопки OK/Cancel
+        button_layout = QtWidgets.QHBoxLayout()
+        btn_ok = QtWidgets.QPushButton("OK")
+        btn_ok.clicked.connect(dialog.accept)
+        btn_cancel = QtWidgets.QPushButton("Cancel")
+        btn_cancel.clicked.connect(dialog.reject)
+        button_layout.addWidget(btn_ok)
+        button_layout.addWidget(btn_cancel)
+        layout.addLayout(button_layout)
+        
+        if dialog.exec_() == QtWidgets.QDialog.Accepted:
+            self.canvas.set_canvas_limits(
+                enabled_checkbox.isChecked(),
+                width_spin.value(),
+                height_spin.value()
+            )
+            self.statusBar().showMessage(
+                f"Canvas limits: {'enabled' if enabled_checkbox.isChecked() else 'disabled'} "
+                f"({width_spin.value()}x{height_spin.value()})", 
+                3000
+            )
+    
+    def _set_preset_size(self, width, height, width_spin, height_spin):
+        """Встановити розмір з пресету"""
+        width_spin.setValue(width)
+        height_spin.setValue(height)
+    
+    def show_grid_size_dialog(self):
+        """Показати діалог налаштування розміру сітки"""
+        current_size = self.canvas.get_grid_size()
+        
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle("Grid Size Settings")
+        layout = QtWidgets.QVBoxLayout(dialog)
+        
+        # Інформація
+        info_label = QtWidgets.QLabel(
+            "Оберіть розмір сітки для малювання.\n"
+            "Менший розмір = точніше малювання, але більше ліній.\n"
+            "Більший розмір = швидше, але менш точно."
+        )
+        info_label.setWordWrap(True)
+        layout.addWidget(info_label)
+        
+        layout.addSpacing(10)
+        
+        # Пресети розміру сітки
+        presets_group = QtWidgets.QGroupBox("Швидкий вибір")
+        presets_layout = QtWidgets.QVBoxLayout()
+        
+        grid_presets = [
+            ("5 пікселів (дуже точно)", 5),
+            ("10 пікселів (точно) - рекомендовано", 10),
+            ("20 пікселів (стандарт)", 20),
+            ("50 пікселів (грубо)", 50),
+        ]
+        
+        for label, size in grid_presets:
+            btn = QtWidgets.QPushButton(label)
+            btn.clicked.connect(lambda checked, s=size: self._apply_grid_size(s, dialog))
+            if size == current_size:
+                btn.setStyleSheet("background-color: #4CAF50; color: white;")
+            presets_layout.addWidget(btn)
+        
+        presets_group.setLayout(presets_layout)
+        layout.addWidget(presets_group)
+        
+        layout.addSpacing(10)
+        
+        # Поточний розмір
+        current_label = QtWidgets.QLabel(f"Поточний розмір: {current_size} пікселів")
+        current_label.setStyleSheet("color: gray;")
+        layout.addWidget(current_label)
+        
+        # Кнопка Close
+        btn_close = QtWidgets.QPushButton("Close")
+        btn_close.clicked.connect(dialog.accept)
+        layout.addWidget(btn_close)
+        
+        dialog.exec_()
+    
+    def _apply_grid_size(self, size, dialog):
+        """Застосувати розмір сітки"""
+        self.canvas.set_grid_size(size)
+        self.statusBar().showMessage(f"Grid size set to {size}px", 2000)
+        dialog.accept()
+    
+    def show_camera_preview(self):
+        """Показати попередній перегляд на камері"""
+        # Перевіряємо чи є фігури для відображення
+        if not self.canvas.shapes:
+            QtWidgets.QMessageBox.information(
+                self,
+                "No Shapes",
+                "Please draw some shapes before testing on camera."
+            )
+            return
+        
+        # Імпортуємо модуль перегляду
+        from preview_camera import CameraPreviewWindow
+        
+        # Створюємо і показуємо вікно
+        preview_window = CameraPreviewWindow(self.canvas, self)
+        preview_window.exec_()
 

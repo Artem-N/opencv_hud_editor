@@ -31,6 +31,7 @@ class Shape:
                 - arrow: x1,y1,x2,y2
                 - ellipse: cx,cy,rx,ry,angle
                 - curve: x1,y1,x2,y2,cx,cy (квадратична крива Безьє)
+                - cubic_curve: x1,y1,x2,y2,cx1,cy1,cx2,cy2 (кубічна крива Безьє з 2 контрольними точками)
         """
         self.kind = kind
         self.color_bgr = color_bgr

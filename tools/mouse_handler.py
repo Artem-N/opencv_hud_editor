@@ -4,7 +4,7 @@
 import math
 from PyQt5 import QtWidgets, QtCore
 from shape import Shape
-from utils.geometry import is_point_near_line_middle, snap_to_grid, constrain_line
+from utils.geometry import is_point_near_line_middle, is_point_near_line_endpoint, snap_to_grid, constrain_line
 
 
 class MouseHandler:
@@ -91,9 +91,22 @@ class MouseHandler:
         if clicked_shape_idx is not None:
             shape = shape_mgr.shapes[clicked_shape_idx]
             
-            # Перевірка на середину лінії/стрілки (для перетворення в криву)
+            # Перевірка на кінці лінії/стрілки (для перетворення в кубічну криву)
             if shape.kind in ['line', 'arrow']:
                 c = shape.coords
+                # Збільшений tolerance для легшого захоплення кінців
+                tolerance = max(25, 10 * zoom_pan.zoom_factor)  # Адаптивний tolerance
+                endpoint, point_coords = is_point_near_line_endpoint(
+                    x, y, c['x1'], c['y1'], c['x2'], c['y2'], 
+                    tolerance
+                )
+                if endpoint:
+                    # Створюємо кубічну криву з редагуванням кінця
+                    selection_mgr.start_cubic_curve_editing(clicked_shape_idx, x, y, endpoint, shape_mgr.shapes)
+                    self.temp_point = None
+                    return {'redraw': True}
+                
+                # Якщо не кінець, перевіряємо середину (для квадратичної кривої)
                 is_middle, t = is_point_near_line_middle(
                     x, y, c['x1'], c['y1'], c['x2'], c['y2'], 
                     15 / zoom_pan.zoom_factor

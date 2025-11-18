@@ -46,9 +46,9 @@ class ShapeRenderer:
             painter.setBrush(QtCore.Qt.NoBrush)
         
         if shape.kind == 'line':
-            ShapeRenderer._draw_line(painter, shape, is_selected, line_style, dash_length, dot_length, pen)
+            ShapeRenderer._draw_line(painter, shape, is_selected, line_style, dash_length, dot_length, pen, color, zoom_factor)
         elif shape.kind == 'arrow':
-            ShapeRenderer._draw_arrow(painter, shape, is_selected, line_style, dash_length, dot_length, pen, color)
+            ShapeRenderer._draw_arrow(painter, shape, is_selected, line_style, dash_length, dot_length, pen, color, zoom_factor)
         elif shape.kind == 'curve':
             ShapeRenderer._draw_curve(painter, shape, is_selected, show_control_points, zoom_factor, pen, color)
         elif shape.kind == 'circle':
@@ -67,7 +67,7 @@ class ShapeRenderer:
         painter.setBrush(QtCore.Qt.NoBrush)
     
     @staticmethod
-    def _draw_line(painter, shape, is_selected, line_style, dash_length, dot_length, pen):
+    def _draw_line(painter, shape, is_selected, line_style, dash_length, dot_length, pen, color, zoom_factor):
         """Малювання лінії"""
         c = shape.coords
         if not is_selected:
@@ -79,9 +79,16 @@ class ShapeRenderer:
                 painter.drawLine(QtCore.QPointF(c['x1'], c['y1']), QtCore.QPointF(c['x2'], c['y2']))
         else:
             painter.drawLine(QtCore.QPointF(c['x1'], c['y1']), QtCore.QPointF(c['x2'], c['y2']))
+            
+            # Малюємо маркери на кінцях для вказівки можливості створення кубічної кривої
+            endpoint_size = 8 / zoom_factor
+            painter.setBrush(QtGui.QBrush(QtGui.QColor(100, 200, 255)))  # Блакитний
+            painter.setPen(QtGui.QPen(QtGui.QColor(50, 150, 255), 2))
+            painter.drawEllipse(QtCore.QPointF(c['x1'], c['y1']), endpoint_size, endpoint_size)
+            painter.drawEllipse(QtCore.QPointF(c['x2'], c['y2']), endpoint_size, endpoint_size)
     
     @staticmethod
-    def _draw_arrow(painter, shape, is_selected, line_style, dash_length, dot_length, pen, color):
+    def _draw_arrow(painter, shape, is_selected, line_style, dash_length, dot_length, pen, color, zoom_factor):
         """Малювання стрілки"""
         c = shape.coords
         # Малюємо лінію
@@ -115,34 +122,95 @@ class ShapeRenderer:
             ])
             painter.setBrush(QtGui.QBrush(color))
             painter.drawPolygon(arrow_poly)
+        
+        # Малюємо маркери на кінцях коли виділено
+        if is_selected:
+            endpoint_size = 8 / zoom_factor
+            painter.setBrush(QtGui.QBrush(QtGui.QColor(100, 200, 255)))  # Блакитний
+            painter.setPen(QtGui.QPen(QtGui.QColor(50, 150, 255), 2))
+            painter.drawEllipse(QtCore.QPointF(c['x1'], c['y1']), endpoint_size, endpoint_size)
+            painter.drawEllipse(QtCore.QPointF(c['x2'], c['y2']), endpoint_size, endpoint_size)
     
     @staticmethod
     def _draw_curve(painter, shape, is_selected, show_control_points, zoom_factor, pen, color):
-        """Малювання кривої Безьє"""
+        """Малювання кривої Безьє (квадратичної або кубічної)"""
         c = shape.coords
+        
+        # Перевіряємо стилі лінії
+        line_style = getattr(shape, 'line_style', 'solid')
+        dash_length = getattr(shape, 'dash_length', 10)
+        dot_length = getattr(shape, 'dot_length', 5)
+        
         path = QtGui.QPainterPath()
         path.moveTo(c['x1'], c['y1'])
-        path.quadTo(c['cx'], c['cy'], c['x2'], c['y2'])
-        painter.drawPath(path)
+        
+        # Перевіряємо тип кривої
+        if 'cx1' in c and 'cy1' in c and 'cx2' in c and 'cy2' in c:
+            # Кубічна крива Безьє з двома контрольними точками
+            path.cubicTo(c['cx1'], c['cy1'], c['cx2'], c['cy2'], c['x2'], c['y2'])
+        else:
+            # Квадратична крива Безьє з однією контрольною точкою
+            path.quadTo(c['cx'], c['cy'], c['x2'], c['y2'])
+        
+        # Застосовуємо стилі для кривої через QPen (правильні пунктири)
+        if line_style == 'dashed':
+            # Створюємо pen з пунктирним стилем
+            dashed_pen = QtGui.QPen(pen)
+            # Встановлюємо pattern для пунктиру
+            dash_pattern = [dash_length, dash_length]  # [довжина_пунктира, проміжок]
+            dashed_pen.setDashPattern(dash_pattern)
+            dashed_pen.setCapStyle(QtCore.Qt.FlatCap)
+            painter.setPen(dashed_pen)
+            painter.drawPath(path)
+        elif line_style == 'dotted':
+            # Створюємо pen з точковим стилем
+            dotted_pen = QtGui.QPen(pen)
+            # Встановлюємо pattern для точок
+            dot_pattern = [dot_length, dot_length * 2]  # [довжина_точки, проміжок]
+            dotted_pen.setDashPattern(dot_pattern)
+            dotted_pen.setCapStyle(QtCore.Qt.RoundCap)
+            painter.setPen(dotted_pen)
+            painter.drawPath(path)
+        else:
+            # Суцільна лінія - малюємо звичайним path
+            painter.drawPath(path)
         
         # Контрольні точки
         if is_selected and show_control_points:
-            # Лінії до контрольної точки
             pen_helper = QtGui.QPen(QtGui.QColor(100, 100, 100))
             pen_helper.setStyle(QtCore.Qt.DotLine)
             pen_helper.setWidth(1)
             painter.setPen(pen_helper)
-            painter.drawLine(QtCore.QPointF(c['x1'], c['y1']), QtCore.QPointF(c['cx'], c['cy']))
-            painter.drawLine(QtCore.QPointF(c['x2'], c['y2']), QtCore.QPointF(c['cx'], c['cy']))
             
-            # Контрольна точка
             ctrl_point_size = 6 / zoom_factor
-            painter.setBrush(QtGui.QBrush(QtGui.QColor(255, 200, 0)))
-            painter.setPen(QtGui.QPen(QtGui.QColor(255, 255, 0)))
-            painter.drawEllipse(QtCore.QPointF(c['cx'], c['cy']), ctrl_point_size, ctrl_point_size)
+            end_point_size = 4 / zoom_factor
+            
+            if 'cx1' in c and 'cy1' in c and 'cx2' in c and 'cy2' in c:
+                # Кубічна крива - малюємо дві контрольні точки
+                # Лінії до контрольних точок
+                painter.drawLine(QtCore.QPointF(c['x1'], c['y1']), QtCore.QPointF(c['cx1'], c['cy1']))
+                painter.drawLine(QtCore.QPointF(c['x2'], c['y2']), QtCore.QPointF(c['cx2'], c['cy2']))
+                
+                # Перша контрольна точка (жовта)
+                painter.setBrush(QtGui.QBrush(QtGui.QColor(255, 200, 0)))
+                painter.setPen(QtGui.QPen(QtGui.QColor(255, 255, 0)))
+                painter.drawEllipse(QtCore.QPointF(c['cx1'], c['cy1']), ctrl_point_size, ctrl_point_size)
+                
+                # Друга контрольна точка (помаранчева)
+                painter.setBrush(QtGui.QBrush(QtGui.QColor(255, 150, 0)))
+                painter.setPen(QtGui.QPen(QtGui.QColor(255, 100, 0)))
+                painter.drawEllipse(QtCore.QPointF(c['cx2'], c['cy2']), ctrl_point_size, ctrl_point_size)
+            else:
+                # Квадратична крива - одна контрольна точка
+                painter.drawLine(QtCore.QPointF(c['x1'], c['y1']), QtCore.QPointF(c['cx'], c['cy']))
+                painter.drawLine(QtCore.QPointF(c['x2'], c['y2']), QtCore.QPointF(c['cx'], c['cy']))
+                
+                # Контрольна точка (жовта)
+                painter.setBrush(QtGui.QBrush(QtGui.QColor(255, 200, 0)))
+                painter.setPen(QtGui.QPen(QtGui.QColor(255, 255, 0)))
+                painter.drawEllipse(QtCore.QPointF(c['cx'], c['cy']), ctrl_point_size, ctrl_point_size)
             
             # Кінцеві точки
-            end_point_size = 4 / zoom_factor
             painter.setBrush(QtGui.QBrush(color))
             painter.setPen(pen)
             painter.drawEllipse(QtCore.QPointF(c['x1'], c['y1']), end_point_size, end_point_size)

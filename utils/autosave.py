@@ -39,11 +39,13 @@ class AutoSaveManager(QtCore.QObject):
             # Використовуємо ProjectIO для збереження
             from export.project_io import ProjectIO
             
-            # Зберігаємо з міткою часу
+            # Зберігаємо з міткою часу та налаштуваннями полотна
+            canvas_limits = self.canvas.get_canvas_limits()
             ProjectIO.save_project(
                 self.canvas.shape_manager.shapes,
                 self.autosave_file,
-                self.canvas.group_manager
+                self.canvas.group_manager,
+                canvas_limits
             )
             
             print(f"[AutoSave] Session saved at {datetime.now().strftime('%H:%M:%S')}")
@@ -62,7 +64,7 @@ class AutoSaveManager(QtCore.QObject):
         try:
             from export.project_io import ProjectIO
             
-            shapes, groups_data = ProjectIO.load_project(self.autosave_file)
+            shapes, groups_data, canvas_limits = ProjectIO.load_project(self.autosave_file)
             self.canvas.shape_manager.shapes = shapes
             self.canvas.selection_manager.clear_selection()
             
@@ -70,6 +72,12 @@ class AutoSaveManager(QtCore.QObject):
                 self.canvas.group_manager.from_dict(groups_data)
             else:
                 self.canvas.group_manager.clear_all()
+            
+            # Завантажуємо налаштування меж полотна
+            if canvas_limits:
+                self.canvas.canvas_limit_enabled = canvas_limits.get('enabled', False)
+                self.canvas.canvas_limit_width = canvas_limits.get('width', 1920)
+                self.canvas.canvas_limit_height = canvas_limits.get('height', 1080)
             
             self.canvas.update()
             print(f"[AutoSave] Session restored")

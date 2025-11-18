@@ -9,16 +9,17 @@ class ProjectIO:
     """Клас для збереження та завантаження проектів"""
     
     @staticmethod
-    def save_project(shapes, filename, groups=None):
+    def save_project(shapes, filename, groups=None, canvas_limits=None):
         """Зберегти проект у JSON файл
         
         Args:
             shapes: список фігур
             filename: назва файлу
             groups: GroupManager або None
+            canvas_limits: dict з налаштуваннями меж полотна
         """
         project_data = {
-            'version': '2.2',  # Оновлюємо версію
+            'version': '2.3',  # Оновлюємо версію для підтримки canvas_limits
             'shapes': []
         }
         
@@ -46,6 +47,10 @@ class ProjectIO:
         if groups:
             project_data['groups'] = groups.to_dict()
         
+        # Додаємо налаштування меж полотна
+        if canvas_limits:
+            project_data['canvas_limits'] = canvas_limits
+        
         with open(filename, 'w', encoding='utf-8') as f:
             json.dump(project_data, f, indent=2, ensure_ascii=False)
     
@@ -54,7 +59,7 @@ class ProjectIO:
         """Завантажити проект з JSON файлу
         
         Returns:
-            tuple: (shapes, groups_data) - список фігур та дані груп
+            tuple: (shapes, groups_data, canvas_limits) - список фігур, дані груп та налаштування полотна
         """
         with open(filename, 'r', encoding='utf-8') as f:
             project_data = json.load(f)
@@ -80,5 +85,8 @@ class ProjectIO:
         # Завантажуємо інформацію про групи (якщо є)
         groups_data = project_data.get('groups', None)
         
-        return shapes, groups_data
+        # Завантажуємо налаштування меж полотна (якщо є)
+        canvas_limits = project_data.get('canvas_limits', None)
+        
+        return shapes, groups_data, canvas_limits
 

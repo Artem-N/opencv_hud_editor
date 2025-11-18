@@ -55,8 +55,13 @@ class CanvasWidget(QtWidgets.QWidget):
         
         # Інше
         self.snap_to_grid = False
-        self.grid_step = 20
+        self.grid_step = 5  # Дуже маленька сітка для точного малювання
         self.mouse_pos = None
+        
+        # Налаштування розміру полотна (None = необмежене)
+        self.canvas_limit_enabled = False
+        self.canvas_limit_width = 1920
+        self.canvas_limit_height = 1080
     
     # --- Методи режимів малювання ---
 
@@ -218,9 +223,27 @@ class CanvasWidget(QtWidgets.QWidget):
         transform.scale(self.zoom_pan_manager.zoom_factor, self.zoom_pan_manager.zoom_factor)
         painter.setTransform(transform)
 
+
+        # Передаємо налаштування полотна для вирівнювання сітки
+        canvas_limits = None
+        if self.canvas_limit_enabled:
+            canvas_limits = {
+                'enabled': True,
+                'width': self.canvas_limit_width,
+                'height': self.canvas_limit_height
+            }
+        
         # Малюємо сітку та осі
-        self.grid_renderer.draw_grid(painter, self.rect(), self.zoom_pan_manager)
-        self.grid_renderer.draw_center_axes(painter, self.rect(), self.zoom_pan_manager)
+        self.grid_renderer.draw_grid(painter, self.rect(), self.zoom_pan_manager, canvas_limits)
+        self.grid_renderer.draw_center_axes(painter, self.rect(), self.zoom_pan_manager, canvas_limits)
+        
+        # Малюємо межі полотна, якщо увімкнено
+        if self.canvas_limit_enabled:
+            self.grid_renderer.draw_canvas_limits(
+                painter, 
+                self.canvas_limit_width, 
+                self.canvas_limit_height
+            )
 
         # Малюємо фігури
         self.shape_renderer.draw_shapes(
@@ -310,6 +333,31 @@ class CanvasWidget(QtWidgets.QWidget):
         self.snap_to_grid = enabled
         self.update()
     
+    def set_grid_size(self, grid_step: int):
+        """Встановити розмір сітки"""
+        self.grid_step = grid_step
+        self.grid_renderer.grid_step = grid_step
+        self.update()
+    
+    def get_grid_size(self):
+        """Отримати поточний розмір сітки"""
+        return self.grid_step
+    
+    def set_canvas_limits(self, enabled: bool, width: int = 1920, height: int = 1080):
+        """Встановити обмеження розміру полотна"""
+        self.canvas_limit_enabled = enabled
+        self.canvas_limit_width = width
+        self.canvas_limit_height = height
+        self.update()
+    
+    def get_canvas_limits(self):
+        """Отримати поточні обмеження полотна"""
+        return {
+            'enabled': self.canvas_limit_enabled,
+            'width': self.canvas_limit_width,
+            'height': self.canvas_limit_height
+        }
+    
     # --- Редагування фігур ---
     
     def undo(self):
@@ -352,7 +400,29 @@ class CanvasWidget(QtWidgets.QWidget):
         )
         if new_indices:
             self.selection_manager.selected_shapes = set(new_indices)
-        self.update()
+            self.update()
+    
+    def mirror_across_center_horizontal(self):
+        """Дзеркалювати відносно вертикальної осі (через центр canvas)"""
+        canvas_width = self.canvas_limit_width if self.canvas_limit_enabled else None
+        new_indices = self.shape_manager.mirror_shapes_across_center_horizontal(
+            self.selection_manager.selected_shapes,
+            canvas_width
+        )
+        if new_indices:
+            self.selection_manager.selected_shapes = set(new_indices)
+            self.update()
+    
+    def mirror_across_center_vertical(self):
+        """Дзеркалювати відносно горизонтальної осі (через центр canvas)"""
+        canvas_height = self.canvas_limit_height if self.canvas_limit_enabled else None
+        new_indices = self.shape_manager.mirror_shapes_across_center_vertical(
+            self.selection_manager.selected_shapes,
+            canvas_height
+        )
+        if new_indices:
+            self.selection_manager.selected_shapes = set(new_indices)
+            self.update()
     
     # --- Zoom та Pan ---
     
@@ -366,6 +436,11 @@ class CanvasWidget(QtWidgets.QWidget):
     
     def generate_opencv_code(self, origin_mode='editor', canvas_width=None, canvas_height=None):
         """Генерувати OpenCV код"""
+        # Використовуємо межі полотна, якщо вони встановлені
+        if self.canvas_limit_enabled:
+            canvas_width = self.canvas_limit_width
+            canvas_height = self.canvas_limit_height
+        
         # Передаємо групи якщо вони є
         groups = self.group_manager.groups if len(self.group_manager.groups) > 0 else None
         return CodeGenerator.generate_opencv_code(
@@ -378,11 +453,17 @@ class CanvasWidget(QtWidgets.QWidget):
     
     def save_project(self, filename: str):
         """Зберегти проект"""
-        ProjectIO.save_project(self.shape_manager.shapes, filename, self.group_manager)
+        canvas_limits = self.get_canvas_limits()
+        ProjectIO.save_project(
+            self.shape_manager.shapes, 
+            filename, 
+            self.group_manager, 
+            canvas_limits
+        )
     
     def load_project(self, filename: str):
         """Завантажити проект"""
-        shapes, groups_data = ProjectIO.load_project(filename)
+        shapes, groups_data, canvas_limits = ProjectIO.load_project(filename)
         self.shape_manager.shapes = shapes
         self.selection_manager.clear_selection()
         
@@ -391,6 +472,12 @@ class CanvasWidget(QtWidgets.QWidget):
             self.group_manager.from_dict(groups_data)
         else:
             self.group_manager.clear_all()
+        
+        # Завантажуємо налаштування меж полотна
+        if canvas_limits:
+            self.canvas_limit_enabled = canvas_limits.get('enabled', False)
+            self.canvas_limit_width = canvas_limits.get('width', 1920)
+            self.canvas_limit_height = canvas_limits.get('height', 1080)
         
         self.update()
     
